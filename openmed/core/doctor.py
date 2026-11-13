@@ -10,6 +10,7 @@ import platform
 import re
 import subprocess
 import sys
+import unicodedata
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -92,6 +93,7 @@ def run_diagnostics() -> list[dict[str, Any]]:
     )
 
     _check_openmed_version(checks)
+    _check_unicode_data(checks)
     _check_low_resource_envelope(checks)
     _check_optional_dependencies(checks)
     _check_hf_token(checks)
@@ -328,6 +330,23 @@ def _check_openmed_version(checks: list[dict[str, Any]]) -> None:
         checks.append(_check("openmed_version", "PASS", __version__))
     except Exception:
         checks.append(_check("openmed_version", "WARN", "version unavailable"))
+
+
+def _check_unicode_data(checks: list[dict[str, Any]]) -> None:
+    """Report the Unicode Character Database version behind ``unicodedata``.
+
+    NFKC normalization and grapheme snapping depend on this version, which
+    changes between CPython releases. The check is informational and never
+    fails the command.
+    """
+    try:
+        version = str(unicodedata.unidata_version)
+    except Exception:
+        checks.append(_check("unicode_data_version", "WARN", "version unavailable"))
+        return
+    check = _check("unicode_data_version", "PASS", version)
+    check["version"] = version
+    checks.append(check)
 
 
 def _check_optional_dependencies(checks: list[dict[str, Any]]) -> None:

@@ -10,8 +10,10 @@ see the [Quick Start](getting-started.md) and
 
 !!! tip "Run the built-in doctor first"
     Before digging in, run the offline environment check. It reports your Python version and architecture,
-    which selected runtime extras are importable, whether an `HF_TOKEN` is present, and whether offline mode
-    is active. Dependency, token, Python-version, and architecture checks that need action include a
+    the Unicode data version behind `unicodedata` (`unicode_data_version`, informational: NFKC offsets and
+    grapheme snapping can differ between two installs with different versions), which selected runtime
+    extras are importable, whether an `HF_TOKEN` is present, and whether offline mode is active.
+    Dependency, token, Python-version, and architecture checks that need action include a
     remediation `Hint:`.
 
     ```bash
@@ -24,6 +26,7 @@ see the [Quick Start](getting-started.md) and
     ```text
     PASS python_version: 3.11.9
     PASS python_arch: arm64
+    PASS unicode_data_version: 15.1.0
     WARN hf: transformers not installed
           Hint: Install with: pip install transformers
     PASS openmed_offline: 0
