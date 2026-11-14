@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stop the radiology report parser from capturing a BI-RADS or Lung-RADS
+  category from a qualified range or choice list such as "BI-RADS category
+  0-6" or "Lung-RADS score 1/2/3", and add paired negative controls for
+  legends, lexicon citations and template placeholders (#4668).
 - Keep exact container runtime packages available through a signed Debian
   snapshot, and recover release image SBOMs by verifying and scanning the
   published image's immutable digest.

@@ -188,6 +188,96 @@ def test_does_not_capture_non_stated_or_invalid_category(subtests):
             assert parsed["assessment_category"] is None
 
 
+def test_reference_negative_controls_pair_with_stated_category(subtests):
+    # Each negative control (legend, lexicon citation, template placeholder)
+    # is paired with a stated category so a fix cannot simply stop capturing.
+    for negative, positive, system, category in [
+        # Category legends.
+        (
+            "BI-RADS category 0-6.",
+            "IMPRESSION: BI-RADS category 0.",
+            "BI-RADS",
+            "0",
+        ),
+        (
+            "Lung-RADS category 1-4X applies to screening CT.",
+            "IMPRESSION: Lung-RADS category 1 applies.",
+            "Lung-RADS",
+            "1",
+        ),
+        (
+            "BI-RADS category 0 to 6 is reported.",
+            "IMPRESSION: BI-RADS category 6 is reported.",
+            "BI-RADS",
+            "6",
+        ),
+        (
+            "Legend - BI-RADS 3: probably benign.",
+            "IMPRESSION: Probably benign, BI-RADS 3.",
+            "BI-RADS",
+            "3",
+        ),
+        (
+            "Lung-RADS categories: 1, 2, 3, 4A, 4B.",
+            "IMPRESSION: Lung-RADS: 4B.",
+            "Lung-RADS",
+            "4B",
+        ),
+        # Lexicon citations.
+        (
+            "Per the ACR BI-RADS Atlas, BI-RADS 3 warrants short follow-up.",
+            "IMPRESSION: Short follow-up, BI-RADS 3.",
+            "BI-RADS",
+            "3",
+        ),
+        (
+            "See the ACR Lung-RADS guideline, Lung-RADS 4X.",
+            "IMPRESSION: Airway lesion, Lung-RADS 4X.",
+            "Lung-RADS",
+            "4X",
+        ),
+        (
+            "Reference: ACR BI-RADS lexicon, BI-RADS 4.",
+            "IMPRESSION: Reference lesion, BI-RADS 4.",
+            "BI-RADS",
+            "4",
+        ),
+        # Template placeholders.
+        (
+            "BI-RADS category: 0/1/2/3/4/5/6",
+            "BI-RADS category: 2",
+            "BI-RADS",
+            "2",
+        ),
+        (
+            "Lung-RADS score 1/2/3/4A/4B/4X",
+            "Lung-RADS score 3",
+            "Lung-RADS",
+            "3",
+        ),
+        (
+            "BI-RADS category: [0-6]",
+            "BI-RADS category: 5",
+            "BI-RADS",
+            "5",
+        ),
+        (
+            "Assessment: BI-RADS __.",
+            "Assessment: BI-RADS 1.",
+            "BI-RADS",
+            "1",
+        ),
+    ]:
+        with subtests.test(negative=negative, positive=positive):
+            parsed = parse_radiology_report(negative)
+            assert parsed["assessment_system"] is None
+            assert parsed["assessment_category"] is None
+
+            parsed = parse_radiology_report(positive)
+            assert parsed["assessment_system"] == system
+            assert parsed["assessment_category"] == category
+
+
 def test_count_adjacent_to_token_does_not_shadow_real_category():
     # A count next to the token ("3 nodules") must not shadow the stated
     # assessment ("category 2") elsewhere in the report.

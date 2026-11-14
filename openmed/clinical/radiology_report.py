@@ -233,17 +233,20 @@ def _span_text(text: str, span: Optional[SpanOffset]) -> str:
 _TERMINAL = r"(?=\s*(?:[.,;)\]]|\r?\n|$))"
 _QUALIFIER = r"(?:(?:final\s+)?assessment(?:\s+category)?|category|score)"
 _ASSIGNMENT = r"\s*(?:is\s*)?[:=]?\s*"
+# A qualified number that opens a range or a list of choices ("category 0-6",
+# "category 0 to 6", "score 1/2/3") is a legend or template, not a statement.
+_NOT_RANGE = r"(?!\s*(?:[-\u2013/]|to\b)\s*[0-9])"
 _BIRADS_RE = re.compile(
     r"(?i)\bBI[- ]?RADS\b[\s:]*"
     r"(?:"
-    rf"{_QUALIFIER}{_ASSIGNMENT}(?P<q>[0-6])\b"
+    rf"{_QUALIFIER}{_ASSIGNMENT}(?P<q>[0-6])\b{_NOT_RANGE}"
     rf"|(?P<t>[0-6]){_TERMINAL}"
     r")"
 )
 _LUNGRADS_RE = re.compile(
     r"(?i)\bLung[- ]?RADS\b[\s:]*"
     r"(?:"
-    rf"{_QUALIFIER}{_ASSIGNMENT}(?P<q>4A|4B|4X|[0-3])\b"
+    rf"{_QUALIFIER}{_ASSIGNMENT}(?P<q>4A|4B|4X|[0-3])\b{_NOT_RANGE}"
     rf"|(?P<t>4A|4B|4X|[0-3]){_TERMINAL}"
     r")"
 )
