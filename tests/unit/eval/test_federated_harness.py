@@ -1,17 +1,36 @@
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 from pathlib import Path
+
+import pytest
 
 from openmed.eval.harness import (
     BenchmarkFixture,
     FederatedDetectorSpec,
+    FederatedEvalReport,
     run_federated_leakage_eval,
 )
 from openmed.eval.metrics import EvalSpan
 from openmed.eval.release_gates import evaluate_federated_boundary_gate
 
 SIGNING_KEY = "unit-federated-key"
+
+
+CLEAN_DETECTOR = """
+import json
+import os
+from pathlib import Path
+
+payload = json.loads(Path(os.environ["OPENMED_DETECTOR_INPUT"]).read_text())
+text = payload["text"]
+start = text.index("Morgan Lee")
+end = start + len("Morgan Lee")
+Path(os.environ["OPENMED_DETECTOR_OUTPUT"]).write_text(
+    json.dumps({"spans": [{"start": start, "end": end, "label": "PERSON"}]})
+)
+""".lstrip()
 
 
 def _fixture(fixture_id: str, surface: str) -> BenchmarkFixture:
@@ -73,22 +92,7 @@ Path(os.environ["OPENMED_DETECTOR_OUTPUT"]).write_text(
 
 def test_federated_harness_passes_clean_offset_only_detector(tmp_path: Path) -> None:
     fixture = _fixture("clean", "Morgan Lee")
-    detector = _write_detector(
-        tmp_path,
-        """
-import json
-import os
-from pathlib import Path
-
-payload = json.loads(Path(os.environ["OPENMED_DETECTOR_INPUT"]).read_text())
-text = payload["text"]
-start = text.index("Morgan Lee")
-end = start + len("Morgan Lee")
-Path(os.environ["OPENMED_DETECTOR_OUTPUT"]).write_text(
-    json.dumps({"spans": [{"start": start, "end": end, "label": "PERSON"}]})
-)
-""".lstrip(),
-    )
+    detector = _write_detector(tmp_path, CLEAN_DETECTOR)
 
     report = run_federated_leakage_eval(
         [fixture],
@@ -102,6 +106,101 @@ Path(os.environ["OPENMED_DETECTOR_OUTPUT"]).write_text(
     assert report.sandbox_violations == ()
     assert report.gate_passed is True
     assert evaluate_federated_boundary_gate(report.to_benchmark_report()).passed is True
+
+
+@pytest.fixture(scope="module")
+def signed_clean_report(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> FederatedEvalReport:
+    detector = _write_detector(tmp_path_factory.mktemp("clean"), CLEAN_DETECTOR)
+    return run_federated_leakage_eval(
+        [_fixture("clean", "Morgan Lee")],
+        detector=detector,
+        generated_at="2026-06-29T00:00:00+00:00",
+        signing_key=SIGNING_KEY,
+    )
+
+
+def test_federated_report_verifies_with_signing_key(
+    signed_clean_report: FederatedEvalReport,
+) -> None:
+    assert signed_clean_report.signature is not None
+    assert signed_clean_report.verify(SIGNING_KEY)
+    assert signed_clean_report.verify(SIGNING_KEY.encode("utf-8"))
+
+
+def test_federated_report_rejects_wrong_key(
+    signed_clean_report: FederatedEvalReport,
+) -> None:
+    assert signed_clean_report.verify("other-federated-key") is False
+
+
+def _tampered_fields(report: FederatedEvalReport) -> dict[str, dict[str, object]]:
+    return {
+        "boundary_leakage": {
+            "boundary_leakage": dataclasses.replace(
+                report.boundary_leakage,
+                rate=0.5,
+                leaked_bytes=report.boundary_leakage.total_phi_bytes // 2,
+            )
+        },
+        "gate_passed": {"gate_passed": not report.gate_passed},
+        "metadata": {"metadata": {**dict(report.metadata), "site": "edited"}},
+        "resource_accounting": {
+            "resource_accounting": {
+                **dict(report.resource_accounting),
+                "process_count": 0,
+            }
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["boundary_leakage", "gate_passed", "metadata", "resource_accounting"],
+)
+def test_federated_report_rejects_edited_field(
+    signed_clean_report: FederatedEvalReport, field_name: str
+) -> None:
+    changes = _tampered_fields(signed_clean_report)[field_name]
+    tampered = dataclasses.replace(signed_clean_report, **changes)
+
+    assert tampered.signature == signed_clean_report.signature
+    assert tampered.verify(SIGNING_KEY) is False
+
+
+@pytest.mark.parametrize("field_name", ["boundary_leakage", "gate_passed", "metadata"])
+def test_federated_report_rejects_edited_field_with_recomputed_repro_hash(
+    signed_clean_report: FederatedEvalReport, field_name: str
+) -> None:
+    changes = _tampered_fields(signed_clean_report)[field_name]
+    tampered = dataclasses.replace(signed_clean_report, **changes)
+    tampered.repro_hash = tampered.recompute_repro_hash()
+
+    assert tampered.repro_hash != signed_clean_report.repro_hash
+    assert tampered.verify(SIGNING_KEY) is False
+
+
+def test_federated_report_rejects_missing_signature(
+    signed_clean_report: FederatedEvalReport,
+) -> None:
+    unsigned = dataclasses.replace(signed_clean_report, signature=None)
+
+    assert unsigned.verify(SIGNING_KEY) is False
+
+
+def test_federated_report_rejects_unexpected_algorithm(
+    signed_clean_report: FederatedEvalReport,
+) -> None:
+    assert signed_clean_report.signature is not None
+    relabeled = dataclasses.replace(
+        signed_clean_report,
+        signature=dataclasses.replace(
+            signed_clean_report.signature, algorithm="HMAC-SHA1"
+        ),
+    )
+
+    assert relabeled.verify(SIGNING_KEY) is False
 
 
 def test_federated_harness_reports_network_and_filesystem_violations(
