@@ -225,6 +225,71 @@ def test_earliest_stated_category_wins_when_multiple_present():
     assert parsed["assessment_category"] == "4"
 
 
+def test_captures_stated_liver_prostate_thyroid_ovarian_categories(subtests):
+    for text, system, category in [
+        ("IMPRESSION: Observation 1, LI-RADS 4.", "LI-RADS", "4"),
+        ("IMPRESSION: Segment 7 observation, LI-RADS LR-5.", "LI-RADS", "LR-5"),
+        ("IMPRESSION: LI-RADS category LR-M.", "LI-RADS", "LR-M"),
+        ("IMPRESSION: Portal vein thrombus, LI-RADS LR-TIV.", "LI-RADS", "LR-TIV"),
+        ("IMPRESSION: Degraded images, LI-RADS LR-NC.", "LI-RADS", "LR-NC"),
+        ("IMPRESSION: LI-RADS lr-3.", "LI-RADS", "LR-3"),
+        ("IMPRESSION: Left peripheral zone lesion, PI-RADS 3.", "PI-RADS", "3"),
+        ("IMPRESSION: PI-RADS assessment category is 5.", "PI-RADS", "5"),
+        ("IMPRESSION: PIRADS 4.", "PI-RADS", "4"),
+        ("IMPRESSION: Right lobe nodule, ACR TI-RADS TR4.", "TI-RADS", "TR4"),
+        ("IMPRESSION: TI-RADS 3.", "TI-RADS", "3"),
+        ("IMPRESSION: TI-RADS score: 5.", "TI-RADS", "5"),
+        ("IMPRESSION: Left adnexal cyst, O-RADS US 3.", "O-RADS", "3"),
+        ("IMPRESSION: O-RADS MRI score 4.", "O-RADS", "4"),
+        ("IMPRESSION: Incomplete evaluation, O-RADS 0.", "O-RADS", "0"),
+        ("IMPRESSION: Assessed per PI-RADS 2.1: PI-RADS 4.", "PI-RADS", "4"),
+    ]:
+        with subtests.test(text=text, system=system, category=category):
+            parsed = parse_radiology_report(text)
+            assert parsed["assessment_system"] == system
+            assert parsed["assessment_category"] == category
+
+
+def test_does_not_capture_liver_prostate_thyroid_ovarian_non_statements(subtests):
+    for text in [
+        # Legends listing every category are reference material.
+        "LI-RADS categories: LR-1 definitely benign, LR-5 definitely HCC.",
+        "Legend: LI-RADS 1 = definitely benign, 5 = definitely HCC.",
+        "Legend: PI-RADS 1: very low, 2: low, 3: intermediate.",
+        "Legend: TI-RADS category 4 means moderately suspicious.",
+        "O-RADS US categories 0 to 5 were reviewed.",
+        # Version numbers, counts and ranges are not categories.
+        "Assessed per PI-RADS 2.1 guidance.",
+        "LI-RADS v2018 lexicon applied.",
+        "PI-RADS 3 lesions in both lobes.",
+        "The O-RADS 1-5 scale was used.",
+        # Out of range or treatment-response tokens.
+        "PI-RADS 6.",
+        "TI-RADS TR6.",
+        "O-RADS 6.",
+        "LI-RADS LR-6.",
+        "LI-RADS LR-TR viable.",
+    ]:
+        with subtests.test(text=text):
+            parsed = parse_radiology_report(text)
+            assert parsed["assessment_system"] is None
+            assert parsed["assessment_category"] is None
+
+
+def test_decimal_after_token_is_not_a_terminal_category():
+    parsed = parse_radiology_report("Reported per Lung-RADS 1.1 criteria.")
+    assert parsed["assessment_system"] is None
+    assert parsed["assessment_category"] is None
+
+
+def test_earliest_stated_category_wins_across_systems():
+    parsed = parse_radiology_report(
+        "IMPRESSION: Thyroid nodule, TI-RADS TR3. Incidental liver lesion, LI-RADS 2."
+    )
+    assert parsed["assessment_system"] == "TI-RADS"
+    assert parsed["assessment_category"] == "TR3"
+
+
 # ---------------------------------------------------------------------------
 # Advisory
 # ---------------------------------------------------------------------------

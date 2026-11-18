@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `parse_radiology_report()` now captures stated LI-RADS (`LR-1`..`LR-5`,
+  `LR-M`, `LR-TIV`, `LR-NC` or a bare number), PI-RADS, TI-RADS (`TR1`..`TR5`
+  or a bare number) and O-RADS (including `O-RADS US`/`O-RADS MRI`) categories
+  with the same qualifier, terminal and reference-context rules as BI-RADS
+  and Lung-RADS. A version number after the token (`PI-RADS 2.1`,
+  `Lung-RADS 1.1`) is no longer read as a category (#4665).
 - Added versioned JSON Schemas for the async job record, the terminal webhook
   payload, and the REST error envelope, registered in the bundled schema
   fingerprint snapshot, with drift tests that fail when a required field is

@@ -2,7 +2,8 @@
 
 The parser segments a free-text radiology report into a
 findings / impression / recommendation template and captures a *stated*
-BI-RADS or Lung-RADS assessment category when it is explicitly written. It
+BI-RADS, Lung-RADS, LI-RADS, PI-RADS, TI-RADS or O-RADS assessment category
+when it is explicitly written. It
 makes no assessment decision of its own: the category is read verbatim from the
 report text, never computed or inferred from the findings.
 
@@ -19,7 +20,8 @@ from typing import Literal, Optional, TypedDict
 SpanOffset = tuple[int, int]
 
 RADIOLOGY_REPORT_ADVISORY = (
-    "A captured BI-RADS or Lung-RADS category is read verbatim from the report "
+    "A captured BI-RADS, Lung-RADS, LI-RADS, PI-RADS, TI-RADS or O-RADS "
+    "category is read verbatim from the report "
     "text, never computed or inferred from the findings. This parser performs "
     "section segmentation and stated-category capture only, and makes no "
     "assessment decision of its own."
@@ -31,7 +33,9 @@ IMPRESSION = "impression"
 RECOMMENDATION = "recommendation"
 SECTION_KEYS: tuple[str, str, str] = (FINDINGS, IMPRESSION, RECOMMENDATION)
 
-AssessmentSystem = Literal["BI-RADS", "Lung-RADS"]
+AssessmentSystem = Literal[
+    "BI-RADS", "Lung-RADS", "LI-RADS", "PI-RADS", "TI-RADS", "O-RADS"
+]
 
 #: Documented heading lexicon: canonical section -> recognised heading phrases.
 #: Matched case-insensitively at the start of a line, optionally followed by a
@@ -229,8 +233,9 @@ def _span_text(text: str, span: Optional[SpanOffset]) -> str:
 # number, or the number is "terminal" — immediately followed by end-of-clause
 # punctuation, a line break, or end of text. This rejects counts and scale
 # legends adjacent to the token (e.g. ``BI-RADS 4 lesions``, ``BI-RADS 0-6
-# scale``), which are not stated assessments and must never be inferred.
-_TERMINAL = r"(?=\s*(?:[.,;)\]]|\r?\n|$))"
+# scale``), which are not stated assessments and must never be inferred. A
+# period followed by a digit is a decimal (``PI-RADS 2.1``), not a clause end.
+_TERMINAL = r"(?=\s*(?:\.(?!\d)|[,;)\]]|\r?\n|$))"
 _QUALIFIER = r"(?:(?:final\s+)?assessment(?:\s+category)?|category|score)"
 _ASSIGNMENT = r"\s*(?:is\s*)?[:=]?\s*"
 _BIRADS_RE = re.compile(
@@ -246,6 +251,37 @@ _LUNGRADS_RE = re.compile(
     rf"{_QUALIFIER}{_ASSIGNMENT}(?P<q>4A|4B|4X|[0-3])\b"
     rf"|(?P<t>4A|4B|4X|[0-3]){_TERMINAL}"
     r")"
+)
+
+
+def _rads_pattern(token: str, category: str) -> re.Pattern[str]:
+    """Build a stated-category pattern with the same qualifier/terminal rules."""
+    return re.compile(
+        rf"(?i)\b{token}\b[\s:]*"
+        r"(?:"
+        rf"{_QUALIFIER}{_ASSIGNMENT}(?P<q>{category})\b"
+        rf"|(?P<t>{category}){_TERMINAL}"
+        r")"
+    )
+
+
+# LI-RADS v2018 categories are written ``LR-1``..``LR-5``, ``LR-M``,
+# ``LR-TIV`` and ``LR-NC``, or as a bare ``1``..``5`` after the token.
+_LIRADS_RE = _rads_pattern(r"LI[- ]?RADS", r"LR[- ]?(?:[1-5]|M|TIV|NC)|[1-5]")
+# PI-RADS v2.1 assigns 1..5.
+_PIRADS_RE = _rads_pattern(r"PI[- ]?RADS", r"[1-5]")
+# ACR TI-RADS levels are written ``TR1``..``TR5`` or a bare ``1``..``5``.
+_TIRADS_RE = _rads_pattern(r"TI[- ]?RADS", r"TR[- ]?[1-5]|[1-5]")
+# O-RADS US assigns 0..5 and O-RADS MRI 1..5; the lexicon may be named
+# between the token and the category (``O-RADS US 3``, ``O-RADS MRI score 4``).
+_ORADS_RE = _rads_pattern(r"O[- ]?RADS(?:[\s:]+(?:US|MRI))?", r"[0-5]")
+_ASSESSMENT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("BI-RADS", _BIRADS_RE),
+    ("Lung-RADS", _LUNGRADS_RE),
+    ("LI-RADS", _LIRADS_RE),
+    ("PI-RADS", _PIRADS_RE),
+    ("TI-RADS", _TIRADS_RE),
+    ("O-RADS", _ORADS_RE),
 )
 _REFERENCE_CONTEXT_RE = re.compile(
     r"(?i)\b(?:atlas|categories|guideline|legend|lexicon|scale)\b"
@@ -265,35 +301,24 @@ def _is_reference_context(text: str, match_start: int) -> bool:
 
 
 def _capture_assessment(text: str) -> tuple[Optional[str], Optional[str]]:
-    """Capture a stated BI-RADS/Lung-RADS category; never infer one.
+    """Capture a stated RADS category; never infer one.
 
     Returns the earliest explicitly-stated ``(system, category)`` pair, or
     ``(None, None)`` when no category is written in the report.
     """
     candidates: list[tuple[int, str, str]] = []
-    birads = next(
-        (
-            match
-            for match in _BIRADS_RE.finditer(text)
-            if not _is_reference_context(text, match.start())
-        ),
-        None,
-    )
-    if birads is not None:
-        candidates.append(
-            (birads.start(), "BI-RADS", birads.group("q") or birads.group("t"))
+    for system, pattern in _ASSESSMENT_PATTERNS:
+        match = next(
+            (
+                match
+                for match in pattern.finditer(text)
+                if not _is_reference_context(text, match.start())
+            ),
+            None,
         )
-    lungrads = next(
-        (
-            match
-            for match in _LUNGRADS_RE.finditer(text)
-            if not _is_reference_context(text, match.start())
-        ),
-        None,
-    )
-    if lungrads is not None:
-        category = (lungrads.group("q") or lungrads.group("t")).upper()
-        candidates.append((lungrads.start(), "Lung-RADS", category))
+        if match is not None:
+            category = (match.group("q") or match.group("t")).upper()
+            candidates.append((match.start(), system, category))
     if not candidates:
         return (None, None)
     candidates.sort(key=lambda item: item[0])
@@ -311,8 +336,9 @@ def parse_radiology_report(text: str) -> RadiologyReportTemplate:
         A :class:`RadiologyReportTemplate`. ``section_spans`` maps each of
         ``findings``/``impression``/``recommendation`` to its character span in
         ``text`` (or ``None`` when absent). ``assessment_system`` and
-        ``assessment_category`` are populated only when a BI-RADS or Lung-RADS
-        category is explicitly written; otherwise both are ``None``.
+        ``assessment_category`` are populated only when a BI-RADS, Lung-RADS,
+        LI-RADS, PI-RADS, TI-RADS or O-RADS category is explicitly written;
+        otherwise both are ``None``.
     """
     source = text or ""
     spans = _segment(source)
