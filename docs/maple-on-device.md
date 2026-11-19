@@ -219,6 +219,17 @@ validated = validate_maple_onnx_bundle("maple-android.ommaple.zip")
 print(validated.manifest["source_revision"])
 ```
 
+From a shell, `--validate` runs the same check and prints a JSON report with
+`status`, `runtime`, `file_count`, `total_size_bytes` and `manifest_sha256`:
+
+```bash
+python -m openmed.onnx.maple_bundle --validate maple-android.ommaple.zip
+```
+
+It exits 0 for a valid bundle. An invalid or missing bundle exits 1 and prints
+only `{"status": "invalid", "code": ...}` with the fixed code `bundle_invalid`
+or `bundle_not_found`, never a path.
+
 No converted Android weights are distributed in the source repository. The
 full BF16 snapshot is roughly 40 GB, so conversion is a high-memory release
 operation rather than a unit-test job. See the

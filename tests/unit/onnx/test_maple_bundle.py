@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import zipfile
 
@@ -11,6 +12,7 @@ from openmed.onnx.maple_bundle import (
     MAPLE_BUNDLE_FILENAME,
     MapleBundleError,
     build_maple_onnx_bundle,
+    main,
     validate_maple_onnx_bundle,
 )
 
@@ -153,3 +155,78 @@ def test_rejects_undeclared_archive_entry(tmp_path):
 
     with pytest.raises(MapleBundleError, match="exactly match"):
         validate_maple_onnx_bundle(invalid)
+
+
+def test_cli_builds_bundle_with_positional_arguments(tmp_path, capsys):
+    source = tmp_path / "export"
+    source.mkdir()
+    _write_fake_export(source)
+    bundle = tmp_path / "maple.zip"
+
+    assert main([str(source), str(bundle)]) == 0
+
+    report = json.loads(capsys.readouterr().out)
+    assert report["bundle"] == str(bundle.resolve())
+    assert validate_maple_onnx_bundle(bundle).manifest["runtime"] == report["runtime"]
+
+
+def test_cli_validate_reports_valid_bundle(tmp_path, capsys):
+    source = tmp_path / "export"
+    source.mkdir()
+    _write_fake_export(source)
+    built = build_maple_onnx_bundle(source, tmp_path / "maple.zip")
+    with zipfile.ZipFile(built.bundle_path) as archive:
+        manifest_sha256 = hashlib.sha256(
+            archive.read(MAPLE_BUNDLE_FILENAME)
+        ).hexdigest()
+
+    assert main(["--validate", str(built.bundle_path)]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "status": "valid",
+        "runtime": "onnxruntime-mobile",
+        "file_count": 5,
+        "total_size_bytes": built.total_size_bytes,
+        "manifest_sha256": manifest_sha256,
+    }
+
+
+def test_cli_validate_reports_tampered_bundle_without_paths(tmp_path, capsys):
+    source = tmp_path / "export"
+    source.mkdir()
+    _write_fake_export(source)
+    original = build_maple_onnx_bundle(source, tmp_path / "maple.zip")
+    tampered = tmp_path / "tampered.zip"
+    with zipfile.ZipFile(original.bundle_path) as source_archive:
+        with zipfile.ZipFile(tampered, "w", compression=zipfile.ZIP_STORED) as output:
+            for entry in source_archive.infolist():
+                payload = source_archive.read(entry)
+                if entry.filename == "decoder_model.ort":
+                    payload = b"tampered-data"
+                output.writestr(entry.filename, payload)
+
+    assert main(["--validate", str(tampered)]) == 1
+
+    output = capsys.readouterr().out
+    assert json.loads(output) == {"status": "invalid", "code": "bundle_invalid"}
+    assert str(tmp_path) not in output
+
+
+def test_cli_validate_reports_missing_bundle_without_paths(tmp_path, capsys):
+    missing = tmp_path / "missing.zip"
+
+    assert main(["--validate", str(missing)]) == 1
+
+    output = capsys.readouterr().out
+    assert json.loads(output) == {"status": "invalid", "code": "bundle_not_found"}
+    assert str(tmp_path) not in output
+
+
+def test_cli_rejects_validate_mixed_with_build_arguments(tmp_path):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["--validate", str(tmp_path / "maple.zip"), str(tmp_path)])
+    assert excinfo.value.code == 2
+
+    with pytest.raises(SystemExit) as excinfo:
+        main([str(tmp_path)])
+    assert excinfo.value.code == 2

@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add a `--validate BUNDLE` mode to `python -m openmed.onnx.maple_bundle` that
+  checks a received bundle from the shell and prints a JSON report with status,
+  runtime, file count, total bytes and manifest SHA-256. It exits 1 with a fixed
+  `bundle_invalid` or `bundle_not_found` code and no paths when the bundle fails;
+  the build invocation is unchanged (#5082).
 - Added versioned JSON Schemas for the async job record, the terminal webhook
   payload, and the REST error envelope, registered in the bundled schema
   fingerprint snapshot, with drift tests that fail when a required field is

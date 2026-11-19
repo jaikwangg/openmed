@@ -476,8 +476,14 @@ def _reproducible_zip_info(path: str) -> zipfile.ZipInfo:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source_directory", type=Path)
-    parser.add_argument("output_path", type=Path)
+    parser.add_argument("source_directory", type=Path, nargs="?")
+    parser.add_argument("output_path", type=Path, nargs="?")
+    parser.add_argument(
+        "--validate",
+        type=Path,
+        metavar="BUNDLE",
+        help="validate an existing bundle and print a JSON report instead of building",
+    )
     parser.add_argument(
         "--runtime",
         choices=sorted(MAPLE_BUNDLE_RUNTIMES),
@@ -490,9 +496,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Build one Maple bundle from command-line arguments."""
+    """Build or validate one Maple bundle from command-line arguments."""
 
-    arguments = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    arguments = parser.parse_args(argv)
+    if arguments.validate is not None:
+        if arguments.source_directory is not None:
+            parser.error("--validate does not take source_directory or output_path")
+        return _validate_command(arguments.validate)
+    if arguments.output_path is None:
+        parser.error("source_directory and output_path are required to build")
     result = build_maple_onnx_bundle(
         arguments.source_directory,
         arguments.output_path,
@@ -503,6 +516,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(json.dumps({"bundle": str(result.bundle_path), **result.manifest}, indent=2))
     return 0
+
+
+def _validate_command(bundle_path: Path) -> int:
+    """Print a path-free JSON validation report and return the exit code."""
+
+    try:
+        result = validate_maple_onnx_bundle(bundle_path)
+        with zipfile.ZipFile(result.bundle_path) as archive:
+            manifest_sha256 = hashlib.sha256(
+                archive.read(MAPLE_BUNDLE_FILENAME)
+            ).hexdigest()
+    except FileNotFoundError:
+        report: dict[str, Any] = {"status": "invalid", "code": "bundle_not_found"}
+    except MapleBundleError:
+        report = {"status": "invalid", "code": "bundle_invalid"}
+    else:
+        report = {
+            "status": "valid",
+            "runtime": result.manifest["runtime"],
+            "file_count": len(result.manifest["files"]),
+            "total_size_bytes": result.total_size_bytes,
+            "manifest_sha256": manifest_sha256,
+        }
+    print(json.dumps(report, indent=2))
+    return 0 if report["status"] == "valid" else 1
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised through ``main`` tests
