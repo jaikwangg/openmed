@@ -32,6 +32,16 @@ openmed grounding download \
   --cache-dir /path/to/openmed-grounding
 ```
 
+After copying, restoring or moving a cache, re-hash every cached artifact
+against its manifest. The command reads only the local cache, reports
+`{system, version, artifact, status}` per snapshot (`ok`, `mismatch` or
+`missing`), and exits non-zero when any snapshot fails:
+
+```bash
+openmed grounding verify --cache-dir /path/to/openmed-grounding --json
+openmed grounding verify --system icd10cm --cache-dir /path/to/openmed-grounding
+```
+
 Use `--cache-dir` or `OPENMED_GROUNDING_CACHE_DIR` to point the service and
 command line at the same cache. Grounding defaults to `--offline`; the runtime
 installs a socket guard for that operation and never attempts a missing

@@ -2278,6 +2278,14 @@ def _add_grounding_snapshot_command(subparsers: argparse._SubParsersAction) -> N
     list_parser.add_argument("--cache-dir", type=Path, default=None)
     list_parser.set_defaults(handler=_handle_grounding_snapshot_list)
 
+    verify_parser = grounding_sub.add_parser(
+        "verify",
+        help="Re-hash cached terminology snapshots against their manifests.",
+    )
+    verify_parser.add_argument("--system", default=None)
+    verify_parser.add_argument("--cache-dir", type=Path, default=None)
+    verify_parser.set_defaults(handler=_handle_grounding_snapshot_verify)
+
 
 def _add_cohort_command(subparsers: argparse._SubParsersAction) -> None:
     """Add local phenotype resolution commands."""
@@ -6027,6 +6035,31 @@ def _handle_grounding_snapshot_list(args: argparse.Namespace) -> int:
         "snapshots": [manifest.to_dict() for manifest in loader.list_snapshots()]
     }
     return emit(args, payload, human=json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _handle_grounding_snapshot_verify(args: argparse.Namespace) -> int:
+    """Re-hash cached snapshots against their manifests without the network."""
+
+    from ..clinical.grounding import VocabLoader
+    from ..clinical.grounding.vocab import VocabLoaderError
+
+    loader = VocabLoader(cache_dir=args.cache_dir, local_only=True)
+    try:
+        results = loader.verify_snapshots(args.system)
+    except (OSError, TypeError, ValueError, VocabLoaderError) as exc:
+        raise CliError(
+            "The vocabulary snapshots could not be verified.",
+            code="snapshot_verify_failed",
+            exit_code=EXIT_ERROR,
+        ) from exc
+    payload = {"snapshots": list(results)}
+    failed = any(result["status"] != "ok" for result in results)
+    return emit(
+        args,
+        payload,
+        human=json.dumps(payload, indent=2, sort_keys=True),
+        outcome="check_failed" if failed else "completed",
+    )
 
 
 def _handle_cohort_resolve(args: argparse.Namespace) -> int:

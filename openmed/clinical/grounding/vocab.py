@@ -663,6 +663,42 @@ class VocabLoader:
                 manifests.append(manifest)
         return tuple(manifests)
 
+    def verify_snapshots(self, system: str | None = None) -> tuple[dict[str, str], ...]:
+        """Re-hash imported snapshot artifacts against their manifests.
+
+        Each result carries ``system``, ``version``, ``artifact`` and a
+        ``status`` of ``ok``, ``mismatch`` or ``missing``. Verification only
+        reads the local cache and never opens a network connection.
+        """
+
+        systems = (
+            sorted(self.registry) if system is None else [_normalize_system(system)]
+        )
+        results: list[dict[str, str]] = []
+        for key in systems:
+            cache_root = self.cache_dir / key
+            manifest = _read_manifest(cache_root / "manifest.json")
+            if manifest is None:
+                continue
+            data_path = (cache_root / manifest.artifact).resolve()
+            if not data_path.is_file() or not data_path.is_relative_to(
+                cache_root.resolve()
+            ):
+                status = "missing"
+            elif _file_sha256(data_path) != manifest.sha256:
+                status = "mismatch"
+            else:
+                status = "ok"
+            results.append(
+                {
+                    "system": manifest.system,
+                    "version": manifest.version,
+                    "artifact": manifest.artifact,
+                    "status": status,
+                }
+            )
+        return tuple(results)
+
     def _resolve_data_path(self, system: str, source: VocabSource) -> Path:
         cache_root = self.cache_dir / system
         manifest = _read_manifest(cache_root / "manifest.json")
