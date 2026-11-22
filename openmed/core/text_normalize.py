@@ -152,6 +152,28 @@ def normalize_unicode(text: str, form: str = "NFKC") -> str:
     return unicodedata.normalize(form, _require_text(text))
 
 
+def _is_one_sided(region: list[int]) -> bool:
+    old_start, old_end, new_start, new_end, _changed = region
+    return old_start == old_end or new_start == new_end
+
+
+def _joins_previous(text: str, index: int) -> bool:
+    """Return whether ``text[index]`` can reorder or compose with what precedes."""
+
+    character = text[index]
+    if unicodedata.combining(character):
+        return True
+    return (
+        index > 0 and len(unicodedata.normalize("NFC", text[index - 1 : index + 1])) < 2
+    )
+
+
+def _absorb(region: list[int], following: list[int]) -> None:
+    region[1] = following[1]
+    region[3] = following[3]
+    region[4] = 1
+
+
 def _normalization_map(
     text: str,
     normalized: str,
@@ -181,36 +203,55 @@ def _normalization_map(
         b=normalized,
         autojunk=False,
     )
-    output_spans: list[tuple[int, int]] = []
+    # Each region pairs a range of the per-character text with a range of the
+    # normalized text.  A changed region with only source code points (absorbed
+    # by composition) or only output code points (moved by canonical
+    # reordering) means the matcher paired nearby equal code points with the
+    # wrong source, so it is folded back, across any marks or jamo that join
+    # their predecessor, into the region that starts the combining sequence.
+    # Every source code point stays covered and every output code point keeps
+    # a non-empty source span.
+    regions: list[list[int]] = []
     previous_source_end = 0
     previous_output_end = 0
 
     for old_start, new_start, match_size in matcher.get_matching_blocks():
-        old_end = old_start + match_size
-        new_end = new_start + match_size
-        if previous_output_end < new_start:
-            changed_spans = per_character_spans[previous_source_end:old_start]
-            if changed_spans:
-                source_span = (
-                    min(span[0] for span in changed_spans),
-                    max(span[1] for span in changed_spans),
-                )
-            elif per_character_spans:
-                anchor = (
-                    per_character_spans[old_start][0]
-                    if old_start < len(per_character_spans)
-                    else per_character_spans[-1][1]
-                )
-                source_span = (anchor, anchor)
-            else:
-                source_span = (0, 0)
-            output_spans.extend([source_span] * (new_start - previous_output_end))
+        if previous_source_end < old_start or previous_output_end < new_start:
+            regions.append(
+                [previous_source_end, old_start, previous_output_end, new_start, 1]
+            )
+        for offset in range(match_size):
+            source_index = old_start + offset
+            output_index = new_start + offset
+            regions.append(
+                [source_index, source_index + 1, output_index, output_index + 1, 0]
+            )
+        previous_source_end = old_start + match_size
+        previous_output_end = new_start + match_size
 
-        if old_start < old_end:
-            output_spans.extend(per_character_spans[old_start:old_end])
+    merged: list[list[int]] = []
+    for region in regions:
+        if merged and _is_one_sided(merged[-1]):
+            _absorb(merged[-1], region)
+        elif merged and _is_one_sided(region):
+            while (
+                len(merged) > 1
+                and not merged[-1][4]
+                and _joins_previous(per_character_text, merged[-1][0])
+            ):
+                _absorb(merged[-2], merged.pop())
+            _absorb(merged[-1], region)
+        else:
+            merged.append(region)
 
-        previous_source_end = old_end
-        previous_output_end = new_end
+    output_spans: list[tuple[int, int]] = []
+    for old_start, old_end, new_start, new_end, _changed in merged:
+        changed_spans = per_character_spans[old_start:old_end]
+        source_span = (
+            min(span[0] for span in changed_spans),
+            max(span[1] for span in changed_spans),
+        )
+        output_spans.extend([source_span] * (new_end - new_start))
 
     if len(output_spans) != len(normalized):
         raise RuntimeError("failed to build Unicode normalization offset map")

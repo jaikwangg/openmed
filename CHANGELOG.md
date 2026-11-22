@@ -50,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep every source code point covered by the `normalize_unicode_with_offsets`
+  offset map when NFKC reorders combining marks or leaves a blocked mark or
+  jamo after a composed character (for example `a` + U+0301 + U+0323), and pin
+  the map's invariants with Hypothesis property tests (#4874).
 - Key opt-in result-cache entries on the model revision and a model generation
   counter, and clear the cache when a registry promotion, pointer flip or
   rollback changes the served weights, so a model that keeps its name no longer
