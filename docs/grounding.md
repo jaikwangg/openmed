@@ -32,6 +32,17 @@ openmed grounding download \
   --cache-dir /path/to/openmed-grounding
 ```
 
+Each `<cache-dir>/<system>/manifest.json` follows the bundled JSON Schema
+`openmed/core/schemas/json/grounding_snapshot_manifest.schema.json`, so other
+tools can check a cache without importing OpenMed. The schema accepts only the
+free systems and a lowercase `sha256:` digest. Load it from Python with:
+
+```python
+from openmed.clinical.grounding import load_grounding_snapshot_manifest_schema
+
+schema = load_grounding_snapshot_manifest_schema()
+```
+
 Use `--cache-dir` or `OPENMED_GROUNDING_CACHE_DIR` to point the service and
 command line at the same cache. Grounding defaults to `--offline`; the runtime
 installs a socket guard for that operation and never attempts a missing

@@ -21,6 +21,7 @@ import zipfile
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -32,6 +33,7 @@ from .systems import canonical_system, system_uri
 FREE_VOCAB_SYSTEMS = ("rxnorm", "icd10cm", "loinc", "hpo", "mesh")
 RESTRICTED_VOCAB_SYSTEMS = ("umls", "snomed")
 DEFAULT_CACHE_DIR = Path("~/.cache/openmed/grounding")
+SNAPSHOT_MANIFEST_SCHEMA_NAME = "grounding_snapshot_manifest.schema.json"
 SUPPORTED_DATA_SUFFIXES = {".csv", ".jsonl", ".obo", ".rrf", ".tsv", ".txt", ".xml"}
 _CHECKSUM_RE = re.compile(r"\b[a-fA-F0-9]{64}\b")
 _LANGUAGE_ALIAS_KEY_RE = re.compile(
@@ -735,6 +737,20 @@ def get_index(
     """Convenience accessor for ``VocabLoader(...).get_index(system)``."""
 
     return VocabLoader(cache_dir=cache_dir, local_only=local_only).get_index(system)
+
+
+def load_grounding_snapshot_manifest_schema() -> dict[str, Any]:
+    """Load the bundled JSON Schema for snapshot ``manifest.json`` files.
+
+    The schema describes the mapping written by :meth:`SnapshotManifest.to_dict`
+    so other tools can validate a snapshot cache without importing OpenMed.
+    """
+
+    resource = resources.files("openmed.core.schemas.json").joinpath(
+        SNAPSHOT_MANIFEST_SCHEMA_NAME
+    )
+    with resource.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def normalize_alias(value: object) -> str:

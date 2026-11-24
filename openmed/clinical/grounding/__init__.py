@@ -224,6 +224,7 @@ from .vocab import (
     VocabularyIndex,
     VocabularyNotFoundError,
     get_index,
+    load_grounding_snapshot_manifest_schema,
     normalize_language,
 )
 from .vocab import (
@@ -433,6 +434,7 @@ __all__ = [
     "VersionedVocabularyLoader",
     "clear_cache",
     "default_cache_dir",
+    "load_grounding_snapshot_manifest_schema",
     "load_or_build_snapshot",
     "load_snapshot",
     "snapshot_path",

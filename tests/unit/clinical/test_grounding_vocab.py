@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from openmed.clinical.grounding import (
     FREE_VOCAB_SYSTEMS,
@@ -13,6 +15,7 @@ from openmed.clinical.grounding import (
     VocabLoader,
     VocabSource,
     VocabularyChecksumError,
+    load_grounding_snapshot_manifest_schema,
 )
 from openmed.core.offline import OfflineModeError
 
@@ -153,3 +156,78 @@ def test_downloaded_artifact_requires_checksum(tmp_path):
 
     with pytest.raises(VocabularyChecksumError, match="without a SHA-256 checksum"):
         loader.get_index("hpo")
+
+
+def _manifest_validator() -> Draft202012Validator:
+    schema = load_grounding_snapshot_manifest_schema()
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def _imported_manifest(tmp_path: Path, system: str) -> dict:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    fixture = _write_fixture(tmp_path, system)
+    loader = VocabLoader(cache_dir=tmp_path / "cache", registry={})
+    loader.import_snapshot(
+        system,
+        fixture,
+        version="2026-01",
+        license_note="Synthetic fixture",
+    )
+    manifest_path = tmp_path / "cache" / system / "manifest.json"
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
+def test_imported_snapshot_manifests_validate_against_schema(tmp_path):
+    validator = _manifest_validator()
+
+    for system in FREE_VOCAB_SYSTEMS:
+        manifest = _imported_manifest(tmp_path / system, system)
+        assert list(validator.iter_errors(manifest)) == []
+
+
+def test_snapshot_manifest_schema_matches_manifest_fields(tmp_path):
+    schema = load_grounding_snapshot_manifest_schema()
+    manifest = _imported_manifest(tmp_path, "loinc")
+
+    assert set(schema["properties"]) == set(manifest)
+    assert set(schema["required"]) == set(manifest)
+    assert schema["properties"]["system"]["enum"] == list(FREE_VOCAB_SYSTEMS)
+
+
+@pytest.mark.parametrize(
+    "digest",
+    [
+        "a" * 64,
+        "sha256:" + "a" * 63,
+        "sha256:" + "A" * 64,
+        "sha256:" + "g" * 64,
+        "md5:" + "a" * 64,
+    ],
+)
+def test_snapshot_manifest_schema_rejects_malformed_digest(tmp_path, digest):
+    manifest = _imported_manifest(tmp_path, "rxnorm")
+    manifest["sha256"] = digest
+
+    assert not _manifest_validator().is_valid(manifest)
+
+
+@pytest.mark.parametrize("system", ["snomed", "umls", "SNOMED", "rx-norm"])
+def test_snapshot_manifest_schema_rejects_non_free_system(tmp_path, system):
+    manifest = _imported_manifest(tmp_path, "rxnorm")
+    manifest["system"] = system
+
+    assert not _manifest_validator().is_valid(manifest)
+
+
+def test_snapshot_manifest_schema_rejects_missing_blank_and_extra_fields(tmp_path):
+    validator = _manifest_validator()
+    manifest = _imported_manifest(tmp_path, "hpo")
+
+    missing = dict(manifest)
+    del missing["sha256"]
+    blank = {**manifest, "version": "   "}
+    extra = {**manifest, "source_text": "synthetic"}
+
+    for payload in (missing, blank, extra):
+        assert not validator.is_valid(payload)

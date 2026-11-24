@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Publish a JSON Schema for the grounding snapshot `manifest.json`
+  (`grounding_snapshot_manifest.schema.json`) covering its seven fields, the
+  `sha256:` digest pattern and the free-vocabulary system enum, with a
+  `load_grounding_snapshot_manifest_schema()` loader. The manifest shape is
+  unchanged (#4667).
 - Add a standard-library synthetic side-view walker fixture for pose and gait
   tests: seeded joint sequences with heel-strike, toe-off, cadence, step-time and
   double-support truth, asymmetry, far-leg occlusion, joint jitter and a

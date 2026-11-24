@@ -1,0 +1,49 @@
+{
+  "$id": "https://openmed.dev/schemas/v1/grounding_snapshot_manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "manifest.json written beside each free-vocabulary snapshot imported into the grounding cache.",
+  "properties": {
+    "artifact": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    },
+    "format": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "license_note": {
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "system": {
+      "enum": ["rxnorm", "icd10cm", "loinc", "hpo", "mesh"],
+      "type": "string"
+    },
+    "system_uri": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "version": {
+      "minLength": 1,
+      "pattern": "\\S",
+      "type": "string"
+    }
+  },
+  "required": [
+    "artifact",
+    "format",
+    "license_note",
+    "sha256",
+    "system",
+    "system_uri",
+    "version"
+  ],
+  "schema_version": 1,
+  "title": "OpenMedGroundingSnapshotManifest",
+  "type": "object"
+}
