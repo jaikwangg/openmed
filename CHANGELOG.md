@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add `SyntheticWaveformRecord.interbeat_intervals_ms()`, which returns the
+  generator's intervals between consecutive template pulse events in
+  milliseconds (3 decimal places); paused beats yield one long interval and
+  records without annotations return an empty tuple (#4769).
 - Add a standard-library synthetic side-view walker fixture for pose and gait
   tests: seeded joint sequences with heel-strike, toe-off, cadence, step-time and
   double-support truth, asymmetry, far-leg occlusion, joint jitter and a

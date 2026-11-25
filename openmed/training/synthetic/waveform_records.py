@@ -180,6 +180,22 @@ class SyntheticWaveformRecord:
             ],
         }
 
+    def interbeat_intervals_ms(self) -> tuple[float, ...]:
+        """Return generator intervals between consecutive pulse events.
+
+        Intervals come from ``template_pulse`` event seconds, so a skipped
+        ``template_pause`` beat yields one long interval. Values are in
+        milliseconds rounded to 3 decimal places. Records generated with
+        annotations disabled have no events and return an empty tuple.
+        """
+        pulses = [
+            seconds for kind, _index, seconds in self.events if kind == "template_pulse"
+        ]
+        return tuple(
+            round((later - earlier) * 1000, 3)
+            for earlier, later in zip(pulses, pulses[1:])
+        )
+
     def report(self) -> dict[str, object]:
         """Return counts and digests without signal samples."""
         encoded = json.dumps(

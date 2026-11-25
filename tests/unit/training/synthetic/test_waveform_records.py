@@ -77,6 +77,70 @@ def test_annotations_can_be_disabled_without_changing_waveform():
     assert first.samples == second.samples
 
 
+def test_regular_record_interbeat_intervals_match_configured_rate():
+    record = generate_waveform_record(WaveformConfig(duration_seconds=5))
+    assert record.interbeat_intervals_ms() == (1000.0,) * 4
+    fast = generate_waveform_record(
+        WaveformConfig(duration_seconds=10, pulses_per_minute=150)
+    )
+    assert fast.interbeat_intervals_ms() == (400.0,) * 24
+
+
+def test_irregular_record_interbeat_intervals_stay_within_jitter_bound():
+    record = generate_waveform_record(
+        WaveformConfig(seed=3, duration_seconds=60, rhythm="irregular")
+    )
+    intervals = record.interbeat_intervals_ms()
+    pulses = [event for event in record.events if event[0] == "template_pulse"]
+    assert len(intervals) == len(pulses) - 1
+    assert len(set(intervals)) > 1
+    assert all(800 <= interval <= 1200 for interval in intervals)
+    assert 800 <= sum(intervals) / len(intervals) <= 1200
+    assert intervals == tuple(
+        round((later[2] - earlier[2]) * 1000, 3)
+        for earlier, later in zip(pulses, pulses[1:])
+    )
+
+
+def test_pause_record_interbeat_intervals_span_the_skipped_beat():
+    record = generate_waveform_record(
+        WaveformConfig(duration_seconds=5, rhythm="pause")
+    )
+    assert record.interbeat_intervals_ms() == (1000.0, 1000.0, 2000.0)
+
+
+def test_interbeat_intervals_are_empty_without_annotations_or_pairs():
+    assert (
+        generate_waveform_record(
+            WaveformConfig(annotations=False)
+        ).interbeat_intervals_ms()
+        == ()
+    )
+    single = generate_waveform_record(WaveformConfig(duration_seconds=1))
+    assert len(single.events) == 1
+    assert single.interbeat_intervals_ms() == ()
+
+
+def test_interbeat_intervals_leave_serialized_outputs_unchanged():
+    record = generate_waveform_record(WaveformConfig(seed=5, rhythm="irregular"))
+    exported, report = record.to_dict(), record.report()
+    record.interbeat_intervals_ms()
+    assert record.to_dict() == exported
+    assert record.report() == report
+    assert report["record_digest"] == (
+        "5e5bc07f1114c04e5ea2cfd3fdb3e5775223e9c38a53ee78862170cccb4948f9"
+    )
+    assert "interbeat_intervals_ms" not in exported
+    assert set(report) == {
+        "synthetic",
+        "non_diagnostic_notice",
+        "lead_count",
+        "samples_per_lead",
+        "event_count",
+        "record_digest",
+    }
+
+
 def test_generation_does_not_mutate_global_random_state():
     before = random.getstate()
     generate_waveform_record()
