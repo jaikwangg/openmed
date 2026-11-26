@@ -7,15 +7,19 @@ committed gate reports.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 
 from openmed.eval.champion_challenger import (
+    COMPARISON_RECORD_ARTIFACT,
     HOLD,
     PROMOTE,
     REJECT,
@@ -26,6 +30,10 @@ from openmed.eval.champion_challenger import (
     build_promotion_issue_draft,
     compare_champion_challenger,
     write_comparison_record,
+)
+from openmed.eval.champion_challenger_schemas import (
+    build_champion_pointer_schema,
+    build_comparison_record_schema,
 )
 from openmed.eval.release_gates import QUARANTINED, RELEASABLE, GateCheck, GateReport
 
@@ -541,3 +549,203 @@ def test_missing_axis_reason_survives_verified_record_roundtrip(missing_axis):
     entry = next(item for item in tampered["ledger"] if item.get("reason"))
     entry["reason"] = "altered_reason"
     assert not PromotionVerdict.from_dict(tampered).verify()
+
+
+# -- JSON Schema export (#4552) -----------------------------------------------
+
+
+def _schema_validator(schema: dict[str, Any]) -> Draft202012Validator:
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema)
+
+
+def _synthetic_records() -> dict[str, dict[str, Any]]:
+    """Return one comparison record per verdict path, as written to disk."""
+
+    champion = _report(per_label_recall={"SSN": 0.995, "API_KEY": 0.995})
+    better = _report(
+        per_label_recall={"SSN": 0.999, "API_KEY": 0.998},
+        residual_leakage_rate=0.0005,
+        repo_id="OpenMed/pii-tiny-mlx-fp-v4",
+    )
+    worse = _report(
+        per_label_recall={"SSN": 0.97, "API_KEY": 0.995},
+        repo_id="OpenMed/pii-tiny-mlx-fp-v4",
+    )
+    verdicts = {
+        "promote": compare_champion_challenger(champion, better),
+        "hold_f1_only": compare_champion_challenger(
+            _payload_with_f1(champion, 0.80), _payload_with_f1(champion, 0.95)
+        ),
+        "reject": compare_champion_challenger(champion, worse),
+        "missing_axis": compare_champion_challenger(
+            _report(gate_results=(GateCheck("G3", True),)),
+            _report(per_label_recall={"SSN": 0.9999}),
+        ),
+        "bootstrap": compare_champion_challenger(None, better),
+        "bootstrap_rejected": compare_champion_challenger(
+            None, _report(decision=QUARANTINED)
+        ),
+    }
+    return {name: json.loads(verdict.to_json()) for name, verdict in verdicts.items()}
+
+
+def test_comparison_records_from_synthetic_reports_validate(subtests) -> None:
+    validator = _schema_validator(build_comparison_record_schema())
+    records = _synthetic_records()
+
+    assert {record["verdict"] for record in records.values()} == {
+        PROMOTE,
+        HOLD,
+        REJECT,
+    }
+    assert any(entry.get("reason") for entry in records["missing_axis"]["ledger"])
+    assert "champion" in records["hold_f1_only"]["ignored_f1"]
+    for name, record in records.items():
+        with subtests.test(record=name):
+            validator.validate(record)
+
+
+def test_comparison_record_schema_rejects_malformed_records(subtests) -> None:
+    validator = _schema_validator(build_comparison_record_schema())
+    record = _synthetic_records()["promote"]
+
+    def unknown_verdict(doc):
+        doc["verdict"] = "MAYBE"
+
+    def missing_record_hash(doc):
+        del doc["record_hash"]
+
+    def malformed_record_hash(doc):
+        doc["record_hash"] = "deadbeef"
+
+    def wrong_artifact(doc):
+        doc["artifact"] = "openmed.eval.something_else"
+
+    def wrong_schema_version(doc):
+        doc["schema_version"] = 2
+
+    def unknown_outcome(doc):
+        doc["ledger"][0]["outcome"] = "draw"
+
+    def unknown_category(doc):
+        doc["ledger"][0]["category"] = "f1"
+
+    def missing_ledger_field(doc):
+        del doc["ledger"][0]["blocking"]
+
+    def string_ledger_value(doc):
+        doc["ledger"][0]["delta"] = "0.004"
+
+    def extra_field(doc):
+        doc["raw_text"] = "synthetic"
+
+    for mutate in (
+        unknown_verdict,
+        missing_record_hash,
+        malformed_record_hash,
+        wrong_artifact,
+        wrong_schema_version,
+        unknown_outcome,
+        unknown_category,
+        missing_ledger_field,
+        string_ledger_value,
+        extra_field,
+    ):
+        with subtests.test(case=mutate.__name__):
+            doc = copy.deepcopy(record)
+            mutate(doc)
+            assert not validator.is_valid(doc)
+
+
+def test_champion_pointer_schema_validates_empty_and_populated_stores() -> None:
+    validator = _schema_validator(build_champion_pointer_schema())
+    record_hash = compare_champion_challenger(None, _report()).record_hash
+    populated = ChampionPointer()
+    populated.set(
+        ChampionPointerEntry(
+            family="pii",
+            tier="tiny",
+            format="mlx-fp",
+            champion="v3",
+            record_hash=record_hash,
+        )
+    )
+    populated.set(
+        ChampionPointerEntry(
+            family="pii",
+            tier="small",
+            format="onnx",
+            champion="v5",
+            record_hash=record_hash,
+            previous_champion="v4",
+        )
+    )
+
+    for store in (ChampionPointer(), populated):
+        validator.validate(json.loads(store.to_json()))
+    validator.validate(ChampionPointer.load().to_dict())
+
+
+def test_champion_pointer_schema_rejects_malformed_stores(subtests) -> None:
+    validator = _schema_validator(build_champion_pointer_schema())
+    store = ChampionPointer()
+    store.set(
+        ChampionPointerEntry(family="pii", tier="tiny", format="mlx-fp", champion="v3")
+    )
+    document = store.to_dict()
+
+    def missing_champion(doc):
+        del doc["entries"]["pii::tiny::mlx-fp"]["champion"]
+
+    def numeric_previous_champion(doc):
+        doc["entries"]["pii::tiny::mlx-fp"]["previous_champion"] = 3
+
+    def wrong_schema_version(doc):
+        doc["schema_version"] = 2
+
+    def entries_as_list(doc):
+        doc["entries"] = []
+
+    for mutate in (
+        missing_champion,
+        numeric_previous_champion,
+        wrong_schema_version,
+        entries_as_list,
+    ):
+        with subtests.test(case=mutate.__name__):
+            doc = copy.deepcopy(document)
+            mutate(doc)
+            assert not validator.is_valid(doc)
+
+
+def _clear_nested(value: Any) -> None:
+    if isinstance(value, dict):
+        for child in value.values():
+            _clear_nested(child)
+        value.clear()
+    elif isinstance(value, list):
+        for child in value:
+            _clear_nested(child)
+        value.clear()
+
+
+@pytest.mark.parametrize(
+    "build", [build_comparison_record_schema, build_champion_pointer_schema]
+)
+def test_schema_builders_return_fresh_byte_stable_mappings(build) -> None:
+    first = build()
+    rendered = json.dumps(first, sort_keys=True)
+    _clear_nested(first)
+
+    assert json.dumps(build(), sort_keys=True) == rendered
+    assert build()["$id"].startswith("urn:openmed:eval:")
+
+
+def test_comparison_record_schema_tracks_module_constants() -> None:
+    schema = build_comparison_record_schema()
+    entry = schema["$defs"]["ledger_entry"]["properties"]
+
+    assert schema["properties"]["artifact"]["const"] == COMPARISON_RECORD_ARTIFACT
+    assert schema["properties"]["verdict"]["enum"] == [PROMOTE, HOLD, REJECT]
+    assert set(entry["outcome"]["enum"]) == {"win", "tie", "regression"}

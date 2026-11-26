@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add Draft 2020-12 JSON Schemas for the champion-challenger comparison record
+  and the `gates/champion.json` pointer store
+  (`openmed.eval.champion_challenger_schemas`), so reviewers and other tools
+  can validate either file without importing OpenMed (#4552).
 - Add a standard-library synthetic side-view walker fixture for pose and gait
   tests: seeded joint sequences with heel-strike, toe-off, cadence, step-time and
   double-support truth, asymmetry, far-leg occlusion, joint jitter and a
