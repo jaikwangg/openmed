@@ -1,0 +1,92 @@
+{
+  "schema_version": "openmed.tests.surrogate_vault_crypto_vectors.v1",
+  "synthetic": true,
+  "reference": "openmed.core.surrogate_vault_crypto.encrypt_mapping",
+  "encryption_scheme": "AES-256-SIV",
+  "envelope_schema_version": 1,
+  "cases": [
+    {
+      "id": "single-entry",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "mapping": {
+        "<SURROGATE_A>": "<SYNTHETIC_SOURCE_A>"
+      },
+      "envelope": "{\"ciphertext\":\"A9nC2f1qpbjy/SW7v0POGzJKsjZJ+LohLzvJR3xqaNk2m8o61PXXLQ1iRZsbi20Ldz7naGonrks=\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}"
+    },
+    {
+      "id": "same-mapping-other-key",
+      "key_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "mapping": {
+        "<SURROGATE_A>": "<SYNTHETIC_SOURCE_A>"
+      },
+      "envelope": "{\"ciphertext\":\"cf5x0BvtscHopnyPvAAE6wC3UMj4S3sPZZYC2lRyfUNE0jO4q6Oba/9A0mfsg2ni3tVqqGynudc=\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}"
+    },
+    {
+      "id": "unsorted-keys",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "mapping": {
+        "<SURROGATE_C>": "<SYNTHETIC_SOURCE_C>",
+        "<SURROGATE_A>": "<SYNTHETIC_SOURCE_A>",
+        "<SURROGATE_B>": "<SYNTHETIC_SOURCE_B>"
+      },
+      "envelope": "{\"ciphertext\":\"Z6wmBwc8DujrKCzZiWLfOtAQ8E9G7Bz0iRCsUm7seub9klyaqE99MxlQs1cbWSVc7abVTiC/rREDXmVDU2Kvpd2dXXAsb7c+85CHl6usKRBLVTUtGVVOEya2328x/g26jibyykzhOmesIMJHMMTx6VDLa0qFfIT7q+gv5wnhTtYxGXCacY0=\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}"
+    },
+    {
+      "id": "non-ascii-values",
+      "key_hex": "a5a4a7a6a1a0a3a2adacafaea9a8abaab5b4b7b6b1b0b3b2bdbcbfbeb9b8bbba",
+      "mapping": {
+        "<SURROGATE_É>": "<SYNTHETIC_SOURCE_Ü>",
+        "<SURROGATE_名>": "<SYNTHETIC_SOURCE_名>"
+      },
+      "envelope": "{\"ciphertext\":\"RlqpRRv0vBBnxvc2/6DINfz7jXNBgF5KjRFvczdW7Ae6+yB+g+O8JtosVPiN/2y/1jMrBvcCBz3VCjcaUsi2BlmtSDLmSptzF1qE3f1k1SuDZsr2SiLY+/eBEO1FyBpUpBMOmeXIquaFygcrHxaNB8txwQ==\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}"
+    },
+    {
+      "id": "empty-mapping",
+      "key_hex": "a5a4a7a6a1a0a3a2adacafaea9a8abaab5b4b7b6b1b0b3b2bdbcbfbeb9b8bbba",
+      "mapping": {},
+      "envelope": "{\"ciphertext\":\"7Z9lEgqHHsQay1BamK4qGm7j\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}"
+    }
+  ],
+  "negative_cases": [
+    {
+      "id": "flipped-tag-byte",
+      "base": "single-entry",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "envelope": "{\"ciphertext\":\"AtnC2f1qpbjy/SW7v0POGzJKsjZJ+LohLzvJR3xqaNk2m8o61PXXLQ1iRZsbi20Ldz7naGonrks=\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}",
+      "error": "SurrogateVaultPayloadError",
+      "message": "authentication failed"
+    },
+    {
+      "id": "flipped-ciphertext-byte",
+      "base": "single-entry",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "envelope": "{\"ciphertext\":\"A9nC2f1qpbjy/SW7v0POGzJKsjZJ+LohLzvJR3xqaNk2m8o61PXXLQ1iRZsbi20Ldz7naGonrko=\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}",
+      "error": "SurrogateVaultPayloadError",
+      "message": "authentication failed"
+    },
+    {
+      "id": "wrong-key",
+      "base": "single-entry",
+      "key_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "envelope": "{\"ciphertext\":\"A9nC2f1qpbjy/SW7v0POGzJKsjZJ+LohLzvJR3xqaNk2m8o61PXXLQ1iRZsbi20Ldz7naGonrks=\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}",
+      "error": "SurrogateVaultPayloadError",
+      "message": "authentication failed"
+    },
+    {
+      "id": "extra-envelope-field",
+      "base": "single-entry",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "envelope": "{\"ciphertext\":\"A9nC2f1qpbjy/SW7v0POGzJKsjZJ+LohLzvJR3xqaNk2m8o61PXXLQ1iRZsbi20Ldz7naGonrks=\",\"encryption_scheme\":\"AES-256-SIV\",\"key_id\":\"<SYNTHETIC_KEY_ID>\",\"schema_version\":1}",
+      "error": "SurrogateVaultPayloadError",
+      "message": "envelope is malformed"
+    },
+    {
+      "id": "short-key",
+      "base": "single-entry",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "envelope": "{\"ciphertext\":\"A9nC2f1qpbjy/SW7v0POGzJKsjZJ+LohLzvJR3xqaNk2m8o61PXXLQ1iRZsbi20Ldz7naGonrks=\",\"encryption_scheme\":\"AES-256-SIV\",\"schema_version\":1}",
+      "error": "SurrogateVaultKeyError",
+      "message": "exactly 32 bytes"
+    }
+  ]
+}
