@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add a standard-library synthetic heart-sound fixture that renders seeded S1
+  and S2 bursts, with optional noise and clipping, into in-memory 16-bit WAV
+  bytes and returns the onset sample indices as truth. Tests check the bytes with
+  `read_wav_metadata`, the spacing against the requested heart rate, and the
+  truth against an independent burst detector (#4762).
+
 ## [4.0.0] - 2026-11-25
 
 OpenMed 4.0 adds recoverable service jobs and a common way to verify model bundles across OpenMedKit runtimes. This is a major upgrade for service operators and native app developers. Review the deployment, key management, and API changes below before moving from 3.3.
